@@ -426,20 +426,22 @@ git push
 
 ### Schedule Details
 
-Default configuration: **Monday to Friday, 18:00 Beijing Time** auto-execution
+Default configuration: **Monday to Friday, 14:30 and 15:30 Beijing Time** auto-execution (one run each)
 
-Modify time: Edit cron expression in `.github/workflows/00-daily-analysis.yml`:
+Modify time: Edit cron expression in `.github/workflows/00-daily-analysis.yml` (one line per trigger time):
 
 ```yaml
 schedule:
-  - cron: '0 10 * * 1-5'  # UTC time, +8 = Beijing time
+  - cron: '30 6 * * 1-5'  # UTC time, +8 = Beijing time 14:30
+  - cron: '30 7 * * 1-5'  # UTC time, +8 = Beijing time 15:30
 ```
 
 Common cron examples:
 | Expression | Description |
 |--------|------|
-| `'0 10 * * 1-5'` | Mon-Fri 18:00 (Beijing) |
+| `'30 6 * * 1-5'` | Mon-Fri 14:30 (Beijing) |
 | `'30 7 * * 1-5'` | Mon-Fri 15:30 (Beijing) |
+| `'0 10 * * 1-5'` | Mon-Fri 18:00 (Beijing) |
 | `'0 10 * * *'` | Daily 18:00 (Beijing) |
 | `'0 2 * * 1-5'` | Mon-Fri 10:00 (Beijing) |
 

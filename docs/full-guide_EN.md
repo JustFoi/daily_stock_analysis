@@ -193,7 +193,7 @@ To get started quickly, you need at minimum:
 
 ### 5. Done!
 
-Default schedule: Every weekday at **18:00 (Beijing Time)** automatic execution.
+Default schedule: Every weekday at **14:30 and 15:30 (Beijing Time)** automatic execution.
 
 ---
 
@@ -682,8 +682,9 @@ Edit `.github/workflows/00-daily-analysis.yml`:
 
 ```yaml
 schedule:
-  # UTC time, Beijing time = UTC + 8
-  - cron: '0 10 * * 1-5'   # Monday to Friday 18:00 (Beijing Time)
+  # UTC time, Beijing time = UTC + 8; multiple cron lines trigger multiple runs per day
+  - cron: '30 6 * * 1-5'   # Monday to Friday 14:30 (Beijing Time)
+  - cron: '30 7 * * 1-5'   # Monday to Friday 15:30 (Beijing Time)
 ```
 
 Common time reference:
@@ -692,9 +693,13 @@ Common time reference:
 |---------|----------------|
 | 09:30 | `'30 1 * * 1-5'` |
 | 12:00 | `'0 4 * * 1-5'` |
+| 14:30 | `'30 6 * * 1-5'` |
 | 15:00 | `'0 7 * * 1-5'` |
+| 15:30 | `'30 7 * * 1-5'` |
 | 18:00 | `'0 10 * * 1-5'` |
 | 21:00 | `'0 13 * * 1-5'` |
+
+> The repository ships with two triggers at 14:30 and 15:30 Beijing Time. Because `concurrency.group: stock-analysis` uses `cancel-in-progress: false`, a 15:30 run queues behind an unfinished 14:30 run instead of cancelling it. 14:30 falls inside the A-share session (report reflects intraday quotes), while 15:30 is after the close.
 
 ### Local Scheduled Tasks
 
