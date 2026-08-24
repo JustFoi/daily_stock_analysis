@@ -154,6 +154,33 @@ class PushoverSender:
             logger.error(f"发送 Pushover 消息失败: {e}")
             return False
     
+    @staticmethod
+    def _hard_split_text(text: str, max_length: int) -> list:
+        """
+        将超过 max_length 的文本硬拆为多段。
+
+        优先在换行处断开，其次在空格处断开，最后按 max_length 硬切，
+        保证每段都不超过 Pushover 的单条消息上限。
+        """
+        pieces = []
+        remaining = text
+        while len(remaining) > max_length:
+            window = remaining[:max_length]
+            cut = window.rfind("\n")
+            if cut <= 0:
+                cut = window.rfind(" ")
+            if cut <= 0:
+                cut = max_length
+            piece = remaining[:cut].rstrip()
+            if not piece:
+                cut = max_length
+                piece = remaining[:cut]
+            pieces.append(piece)
+            remaining = remaining[cut:].lstrip(" \n")
+        if remaining:
+            pieces.append(remaining)
+        return pieces
+
     def _send_pushover_chunked(
         self, 
         api_url: str, 
@@ -206,6 +233,16 @@ class PushoverSender:
         
         if current_chunk:
             chunks.append(separator.join(current_chunk))
+        
+        # 单个段落本身可能超过 max_length（例如没有空行分隔的长文本），
+        # 直接发送会被 Pushover 按 1024 字符截断，这里再做一次硬拆兜底
+        final_chunks = []
+        for chunk in chunks:
+            if len(chunk) <= max_length:
+                final_chunks.append(chunk)
+            else:
+                final_chunks.extend(self._hard_split_text(chunk, max_length))
+        chunks = final_chunks
         
         total_chunks = len(chunks)
         success_count = 0

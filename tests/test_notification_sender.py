@@ -1602,6 +1602,57 @@ class TestPushoverSender(unittest.TestCase):
         self.assertGreaterEqual(mock_post.call_count, 2)
         self.assertTrue(all(call.kwargs["timeout"] == 9 for call in mock_post.call_args_list))
 
+    @mock.patch("time.sleep")
+    @mock.patch("src.notification_sender.pushover_sender.requests.post")
+    def test_long_section_without_blank_lines_is_split(self, mock_post, _mock_sleep):
+        """单个段落超过 1024 字符（无空行分隔）时也必须拆成多条，不能整段超限发送。"""
+        mock_post.return_value = _response(200, {"status": 1})
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+
+        # 由单换行连接的长文本：旧实现会作为一个 section 整体发送导致被截断
+        content = "\n".join(f"第{i}行 内容内容内容内容内容内容内容内容" for i in range(200))
+        self.assertGreater(len(content), 1024)
+
+        result = sender.send_to_pushover(content, title="报告")
+
+        self.assertTrue(result)
+        self.assertGreaterEqual(mock_post.call_count, 2)
+        messages = [call.kwargs["data"]["message"] for call in mock_post.call_args_list]
+        self.assertTrue(all(len(m) <= 1024 for m in messages))
+        total = mock_post.call_count
+        titles = [call.kwargs["data"]["title"] for call in mock_post.call_args_list]
+        self.assertEqual(titles[0], f"报告 (1/{total})")
+        self.assertEqual(titles[-1], f"报告 ({total}/{total})")
+
+    @mock.patch("time.sleep")
+    @mock.patch("src.notification_sender.pushover_sender.requests.post")
+    def test_long_text_without_whitespace_is_hard_split(self, mock_post, _mock_sleep):
+        """连空格换行都没有的超长文本按 1024 硬切，且内容不丢失。"""
+        mock_post.return_value = _response(200, {"status": 1})
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+
+        content = "股" * 3000
+
+        result = sender.send_to_pushover(content)
+
+        self.assertTrue(result)
+        messages = [call.kwargs["data"]["message"] for call in mock_post.call_args_list]
+        self.assertTrue(all(len(m) <= 1024 for m in messages))
+        self.assertEqual("".join(messages), content)
+
+    def test_hard_split_prefers_line_boundaries(self):
+        lines = ["line-" + "x" * 95 for _ in range(15)]  # 每行 100 字符
+        text = "\n".join(lines)
+        pieces = PushoverSender._hard_split_text(text, 1024)
+        self.assertGreater(len(pieces), 1)
+        for piece in pieces:
+            self.assertLessEqual(len(piece), 1024)
+            # 在换行处断开：每段都由完整行组成
+            for line in piece.split("\n"):
+                self.assertTrue(line.startswith("line-"))
+
 
 class TestPushplusSender(unittest.TestCase):
     """Unit tests for PushplusSender."""
