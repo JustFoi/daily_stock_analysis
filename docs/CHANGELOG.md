@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] AIHubMix 注册与引流链接统一使用 inferera.com，改善中国大陆网络直连体验。
 - [修复] 单股推送模式在未配置通知渠道时仍会落盘本地个股报告；CLI 启动分析若因空股票列表、个股结果全失败或本地报告保存失败而未生成报告，会显式返回失败并记录原因。
 - [修复] 合并推送模式下即使个股汇总报告落盘失败，仍会先发送已有的合并通知；仅启用大盘复盘但最终未生成任何复盘内容时，分析任务会显式返回失败。
+- [修复] Pushover 推送分段发送时，单个段落超过 1024 字符会整段超限导致消息被截断；现在超长段落会优先按换行、必要时按字符强制切片，保证每条消息不超限且内容完整送达。
 - [修复] SearXNG 公共实例发现的默认值由启用改为关闭：公共实例普遍存在限流、下线或不返回 JSON 的情况，默认开启会让未配置搜索 key 的用户每次分析多耗 30~60 秒且新闻面最终为空。运行时默认值、配置模板、中英文档与工作流诊断同步调整；显式设为 true 的用户行为不变。
 
 - [新功能] Agent 工具调用支持按类别（data/search/analysis/action/market）配置默认超时，并允许单工具声明 `timeout_seconds`；有效超时按 first-wins 优先级解析（显式 per-run `tool_call_timeout_seconds` > 单工具显式 `timeout_seconds` > 类别默认 > 无限制），剩余 wall-clock 预算仅作不可突破的外层 cap，超时后返回结构化 `{"timeout": true}` 错误（标记 `retriable: false` 并写入 `non_retriable_tool_results` 防重试重复执行）供 Agent 继续执行而非中断循环（fixes #1890）。
