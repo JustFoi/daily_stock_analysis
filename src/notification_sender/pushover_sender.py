@@ -6,7 +6,7 @@ Pushover 发送提醒服务
 1. 通过 Pushover API 发送 Pushover 消息
 """
 import logging
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 import requests
 
@@ -154,6 +154,28 @@ class PushoverSender:
             logger.error(f"发送 Pushover 消息失败: {e}")
             return False
     
+    @staticmethod
+    def _split_long_text(text: str, max_length: int) -> List[str]:
+        """
+        将超过单条消息上限的文本拆成多段
+
+        优先在换行处拆分以保持可读性；单行超长时按字符硬拆兜底。
+        """
+        pieces: List[str] = []
+        remaining = text
+        while len(remaining) > max_length:
+            window = remaining[:max_length]
+            split_at = window.rfind("\n")
+            if split_at <= 0:
+                split_at = max_length
+            piece = remaining[:split_at].strip("\n")
+            if piece:
+                pieces.append(piece)
+            remaining = remaining[split_at:].lstrip("\n")
+        if remaining:
+            pieces.append(remaining)
+        return pieces
+
     def _send_pushover_chunked(
         self, 
         api_url: str, 
@@ -179,7 +201,17 @@ class PushoverSender:
         else:
             sections = content.split("\n\n")
             separator = "\n\n"
-        
+
+        # Pushover 对超过 1024 字符的消息会静默截断（仍返回成功），
+        # 因此单个段落超过上限时必须继续拆分，保证每一条消息都完整送达
+        normalized_sections: List[str] = []
+        for section in sections:
+            if len(section) > max_length:
+                normalized_sections.extend(self._split_long_text(section, max_length))
+            else:
+                normalized_sections.append(section)
+        sections = normalized_sections
+
         chunks = []
         current_chunk = []
         current_length = 0

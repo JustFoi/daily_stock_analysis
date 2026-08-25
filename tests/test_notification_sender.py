@@ -1602,6 +1602,74 @@ class TestPushoverSender(unittest.TestCase):
         self.assertGreaterEqual(mock_post.call_count, 2)
         self.assertTrue(all(call.kwargs["timeout"] == 9 for call in mock_post.call_args_list))
 
+    @mock.patch("time.sleep")
+    @mock.patch("src.notification_sender.pushover_sender.requests.post")
+    def test_send_chunked_splits_oversized_single_section(self, mock_post, _mock_sleep):
+        """单个段落超过 1024 字符时必须继续拆分，否则会被 Pushover 静默截断"""
+        mock_post.return_value = _response(200, {"status": 1})
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+
+        # 没有空行的超长段落（约 3400 字符），旧逻辑会整段发出并被服务端截断
+        lines = [f"line{i:02d} " + "x" * 50 for i in range(60)]
+        content = "\n".join(lines)
+        self.assertGreater(len(content), 2 * 1024)
+
+        result = sender.send_to_pushover(content)
+
+        self.assertTrue(result)
+        self.assertGreaterEqual(mock_post.call_count, 3)
+        messages = [call.kwargs["data"]["message"] for call in mock_post.call_args_list]
+        for message in messages:
+            self.assertLessEqual(len(message), 1024)
+        combined = "\n".join(messages)
+        for line in lines:
+            self.assertIn(line, combined)
+
+    @mock.patch("time.sleep")
+    @mock.patch("src.notification_sender.pushover_sender.requests.post")
+    def test_send_chunked_divider_sections_never_exceed_limit(self, mock_post, _mock_sleep):
+        """分隔线切出的超长小节也不能超过单条上限"""
+        mock_post.return_value = _response(200, {"status": 1})
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+
+        oversized_section = "\n".join(f"股票{i}观点 " + "y" * 60 for i in range(30))
+        content = "汇总标题\n────────\n" + oversized_section + "\n────────\n结尾提示"
+        self.assertGreater(len(oversized_section), 1024)
+
+        result = sender.send_to_pushover(content)
+
+        self.assertTrue(result)
+        messages = [call.kwargs["data"]["message"] for call in mock_post.call_args_list]
+        self.assertGreaterEqual(len(messages), 2)
+        for message in messages:
+            self.assertLessEqual(len(message), 1024)
+        combined = "\n".join(messages)
+        self.assertIn("汇总标题", combined)
+        self.assertIn("结尾提示", combined)
+        for i in range(30):
+            self.assertIn(f"股票{i}观点", combined)
+
+    @mock.patch("time.sleep")
+    @mock.patch("src.notification_sender.pushover_sender.requests.post")
+    def test_send_chunked_hard_splits_single_long_line(self, mock_post, _mock_sleep):
+        """完全没有换行的超长单行按字符硬拆兜底"""
+        mock_post.return_value = _response(200, {"status": 1})
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+
+        content = "z" * 2500
+
+        result = sender.send_to_pushover(content)
+
+        self.assertTrue(result)
+        messages = [call.kwargs["data"]["message"] for call in mock_post.call_args_list]
+        self.assertGreaterEqual(len(messages), 3)
+        for message in messages:
+            self.assertLessEqual(len(message), 1024)
+        self.assertEqual(sum(len(m.replace("\n", "")) for m in messages), 2500)
+
 
 class TestPushplusSender(unittest.TestCase):
     """Unit tests for PushplusSender."""
