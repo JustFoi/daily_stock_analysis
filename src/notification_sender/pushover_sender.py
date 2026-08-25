@@ -185,6 +185,15 @@ class PushoverSender:
         current_length = 0
         
         for section in sections:
+            if len(section) > max_length:
+                # 单段超限时强制切片，避免超过 Pushover 1024 字符限制导致内容被截断
+                if current_chunk:
+                    chunks.append(separator.join(current_chunk))
+                    current_chunk = []
+                    current_length = 0
+                chunks.extend(self._split_long_section(section, max_length))
+                continue
+            
             # 计算添加这个 section 后的实际长度
             # join() 只在元素之间放置分隔符，不是每个元素后面
             # 所以：第一个元素不需要分隔符，后续元素需要一个分隔符连接
@@ -234,3 +243,21 @@ class PushoverSender:
                 time.sleep(1)
 
         return success_count == total_chunks
+
+    @staticmethod
+    def _split_long_section(section: str, limit: int) -> list:
+        """将超过限制的单段内容切成多个不超过 limit 的片段
+
+        优先在换行处切分以保持可读性；单行仍超限时按字符硬切。
+        """
+        pieces = []
+        remaining = section
+        while len(remaining) > limit:
+            cut = remaining.rfind("\n", 1, limit + 1)
+            if cut <= 0:
+                cut = limit
+            pieces.append(remaining[:cut])
+            remaining = remaining[cut:].lstrip("\n")
+        if remaining:
+            pieces.append(remaining)
+        return pieces

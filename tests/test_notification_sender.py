@@ -1602,6 +1602,76 @@ class TestPushoverSender(unittest.TestCase):
         self.assertGreaterEqual(mock_post.call_count, 2)
         self.assertTrue(all(call.kwargs["timeout"] == 9 for call in mock_post.call_args_list))
 
+    @mock.patch("time.sleep")
+    @mock.patch("src.notification_sender.pushover_sender.requests.post")
+    def test_send_oversized_single_section_is_split_within_limit(self, mock_post, _mock_sleep):
+        """单个段落超过 1024 字符时必须切片发送，不能整段超长导致被截断。"""
+        mock_post.return_value = _response(200, {"status": 1})
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+        # 无分隔符的超长单段（模拟一只股票的完整分析段落）
+        content = "股票600519分析结论：" + ("详" * 3000)
+
+        result = sender.send_to_pushover(content)
+
+        self.assertTrue(result)
+        self.assertGreaterEqual(mock_post.call_count, 3)
+        messages = [call.kwargs["data"]["message"] for call in mock_post.call_args_list]
+        self.assertTrue(all(len(m) <= 1024 for m in messages))
+        # 内容不丢失
+        self.assertEqual("".join(messages), "股票600519分析结论：" + ("详" * 3000))
+        # 标题带分页标记
+        titles = [call.kwargs["data"]["title"] for call in mock_post.call_args_list]
+        total = len(titles)
+        self.assertTrue(all(f"({i+1}/{total})" in t for i, t in enumerate(titles)))
+
+    @mock.patch("time.sleep")
+    @mock.patch("src.notification_sender.pushover_sender.requests.post")
+    def test_send_mixed_sections_with_oversized_section_all_within_limit(self, mock_post, _mock_sleep):
+        """正常段落与超长段落混合时，所有分片都不超过限制且内容完整。"""
+        mock_post.return_value = _response(200, {"status": 1})
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+        sections = ["短段落一", "长" * 2500, "短段落二"]
+        content = "\n\n".join(sections)
+
+        result = sender.send_to_pushover(content)
+
+        self.assertTrue(result)
+        messages = [call.kwargs["data"]["message"] for call in mock_post.call_args_list]
+        self.assertTrue(all(len(m) <= 1024 for m in messages))
+        combined = "".join(messages)
+        for section in sections:
+            self.assertIn(section[:100], combined)
+        self.assertEqual(combined.count("长"), 2500)
+
+    def test_split_long_section_prefers_newline_boundaries(self):
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+        lines = [f"第{i}行：" + "内" * 90 for i in range(20)]
+        section = "\n".join(lines)
+
+        pieces = sender._split_long_section(section, 1024)
+
+        self.assertGreater(len(pieces), 1)
+        self.assertTrue(all(len(p) <= 1024 for p in pieces))
+        # 在换行处切分：每个分片首尾都是完整行
+        for piece in pieces:
+            self.assertTrue(piece.startswith("第"))
+            self.assertTrue(piece.endswith("内"))
+        self.assertEqual("\n".join(pieces), section)
+
+    def test_split_long_section_hard_slices_line_without_newline(self):
+        cfg = _config(pushover_user_key="U", pushover_api_token="T")
+        sender = PushoverSender(cfg)
+        section = "A" * 2500
+
+        pieces = sender._split_long_section(section, 1024)
+
+        self.assertEqual(len(pieces), 3)
+        self.assertTrue(all(len(p) <= 1024 for p in pieces))
+        self.assertEqual("".join(pieces), section)
+
 
 class TestPushplusSender(unittest.TestCase):
     """Unit tests for PushplusSender."""
